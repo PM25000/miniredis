@@ -3,6 +3,7 @@
 use std::net::SocketAddr;
 
 use miniredis::{S};
+use volo_gen::miniredis;
 
 #[volo::main]
 async fn main() {
