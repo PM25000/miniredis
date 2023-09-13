@@ -1,5 +1,8 @@
 #![feature(impl_trait_in_assoc_type)]
 
+use std::hash::Hash;
+use std::hash::Hasher;
+
 use volo_gen::miniredis;
 
 pub struct SlaveServiceS;
@@ -70,7 +73,24 @@ impl volo_gen::miniredis::ProxyService for ProxyServiceS {
         _request: volo_gen::miniredis::SetItemRequest,
     ) -> ::core::result::Result<volo_gen::miniredis::SetItemResponse, ::volo_thrift::AnyhowError>
     {
-        Ok(Default::default())
+        let count = self.master.len();
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        let key = &_request.kv.key;
+        key.hash(&mut hasher);
+        let hash = hasher.finish() as usize;
+        let index = hash % count;
+        let client = &self.master[index];
+        let resp = client.set_item(_request).await;
+        match resp {
+            Ok(info) => {
+                tracing::info!("set_item: {:?}", info);
+                Ok(info)
+            }
+            Err(e) => {
+                tracing::error!("{:?}", e);
+                Err(::volo_thrift::AnyhowError::from(e))
+            }
+        }
     }
     async fn delete_item(
         &self,
@@ -84,6 +104,30 @@ impl volo_gen::miniredis::ProxyService for ProxyServiceS {
         _request: volo_gen::miniredis::GetItemRequest,
     ) -> ::core::result::Result<volo_gen::miniredis::GetItemResponse, ::volo_thrift::AnyhowError>
     {
-        Ok(Default::default())
+        let count = self.slave.len()+self.master.len();
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        let key = &_request.key;
+        key.hash(&mut hasher);
+        let hash = hasher.finish() as usize;
+        let index = hash % count;
+        let resp = if index < self.master.len() {
+            let client = &self.master[index];
+            client.get_item(_request).await
+        }
+        else {
+            let client = &self.slave[index-self.master.len()];
+            client.get_item(_request).await
+        };
+        
+        match resp {
+            Ok(info) => {
+                tracing::info!("get_item: {:?}", info);
+                Ok(info)
+            }
+            Err(e) => {
+                tracing::error!("{:?}", e);
+                Err(::volo_thrift::AnyhowError::from(e))
+            }
+        }
     }
 }

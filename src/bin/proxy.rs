@@ -21,10 +21,16 @@ struct ProxyTerminals {
 #[volo::main]
 async fn main() {
 
+    tracing_subscriber::fmt::init();
+
     let mut settings = File::open("proxy.config").unwrap();
     let mut contents = String::new();
+
     settings.read_to_string(&mut contents).unwrap();
+    
     tracing::info!("proxy.config: {}", contents);
+    // println!("proxy.config: {}", contents);
+
     let data = serde_json::from_str::<ProxyConfig>(&contents).unwrap();
     let mut terminals = ProxyTerminals {
         master: Vec::new(),
@@ -34,7 +40,7 @@ async fn main() {
     for addr in data.master {
         let addr = volo::net::Address::from(addr);
         tracing::info!("master: {:?}", addr);
-        let client = miniredis::MasterServiceClientBuilder::new("volo-example")
+        let client = miniredis::MasterServiceClientBuilder::new(addr.to_string())
             .address(addr)
             .build();
         terminals.master.push(client);
@@ -42,7 +48,7 @@ async fn main() {
     for addr in data.slave {
         let addr = volo::net::Address::from(addr);
         tracing::info!("slave: {:?}", addr);
-        let client = miniredis::SlaveServiceClientBuilder::new("volo-example")
+        let client = miniredis::SlaveServiceClientBuilder::new(addr.to_string())
             .address(addr)
             .build();
         terminals.slave.push(client);
