@@ -59,19 +59,19 @@ async fn delete_item(keys: Vec<FastStr>) -> volo_gen::miniredis::DeleteItemRespo
     }
 }
 
-async fn ping(msg: Option<String>) -> volo_gen::miniredis::PingResponse {
-    let req = volo_gen::miniredis::PingRequest {
-        message: msg.map(|s| FastStr::from(s)),
-    };
-    let resp = CLIENT.ping(req).await;
-    match resp {
-        Ok(info) => info,
-        Err(e) => {
-            tracing::error!("{:?}", e);
-            Default::default()
-        }
-    }
-}
+// async fn ping(msg: Option<String>) -> volo_gen::miniredis::PingResponse {
+//     let req = volo_gen::miniredis::PingRequest {
+//         message: msg.map(|s| FastStr::from(s)),
+//     };
+//     let resp = CLIENT.ping(req).await;
+//     match resp {
+//         Ok(info) => info,
+//         Err(e) => {
+//             tracing::error!("{:?}", e);
+//             Default::default()
+//         }
+//     }
+// }
 
 #[volo::main]
 async fn main() {
@@ -146,15 +146,15 @@ async fn main() {
                 let resp = delete_item(keys).await;
                 println!("{:?}", resp);
             }
-            "ping" => {
-                let msg = args.join(" ");
-                let resp = if args.is_empty() {
-                    ping(None).await
-                } else {
-                    ping(Some(msg)).await
-                };
-                println!("{:?}", resp);
-            }
+            // "ping" => {
+            //     let msg = args.join(" ");
+            //     let resp = if args.is_empty() {
+            //         ping(None).await
+            //     } else {
+            //         ping(Some(msg)).await
+            //     };
+            //     println!("{:?}", resp);
+            // }
             "exit" => {
                 break;
             }

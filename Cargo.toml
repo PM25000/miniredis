@@ -1,5 +1,5 @@
 [package]
-name = "volo_example"
+name = "mini-redis"
 version = "0.1.0"
 edition.workspace = true
 
@@ -7,7 +7,7 @@ edition.workspace = true
 
 [dependencies]
 lazy_static = "1"
-
+config = "0.11.0"
 volo-gen = { path = "./volo-gen" }
 
 volo.workspace = true
@@ -21,6 +21,8 @@ tokio = { workspace = true, features = ["full"] }
 tracing = "0.1"
 tracing-subscriber = "0.3"
 motore = "0.3.3"
+serde = "1.0.188"
+serde_json = "1.0.106"
 
 [profile.release]
 opt-level = 3
