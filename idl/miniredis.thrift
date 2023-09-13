@@ -10,7 +10,7 @@ struct GetItemRequest {
 }
 
 struct GetItemResponse {
-    1: required string value,
+    1: optional string value,
 }
 
 struct SetItemRequest {
