@@ -62,8 +62,7 @@ impl volo_gen::miniredis::MasterService for MasterServiceS {
 }
 
 pub struct ProxyServiceS {
-    pub master: Vec<miniredis::MasterServiceClient>,
-    pub slave: Vec<miniredis::SlaveServiceClient>,
+    pub master: Vec<(miniredis::MasterServiceClient, Vec<miniredis::SlaveServiceClient>)>,
 }
 
 #[volo::async_trait]
@@ -80,7 +79,7 @@ impl volo_gen::miniredis::ProxyService for ProxyServiceS {
         let hash = hasher.finish() as usize;
         let index = hash % count;
         let client = &self.master[index];
-        let resp = client.set_item(_request).await;
+        let resp = client.0.set_item(_request).await;
         match resp {
             Ok(info) => {
                 tracing::info!("set_item: {:?}", info);
@@ -104,19 +103,19 @@ impl volo_gen::miniredis::ProxyService for ProxyServiceS {
         _request: volo_gen::miniredis::GetItemRequest,
     ) -> ::core::result::Result<volo_gen::miniredis::GetItemResponse, ::volo_thrift::AnyhowError>
     {
-        let count = self.slave.len()+self.master.len();
+        let count = self.master.len();
         let mut hasher = std::collections::hash_map::DefaultHasher::new();
         let key = &_request.key;
         key.hash(&mut hasher);
         let hash = hasher.finish() as usize;
         let index = hash % count;
-        let resp = if index < self.master.len() {
-            let client = &self.master[index];
-            client.get_item(_request).await
-        }
-        else {
-            let client = &self.slave[index-self.master.len()];
-            client.get_item(_request).await
+        let client = &self.master[index];
+        let count = client.1.len()+1;
+        let index = hash % count;
+        let resp = if index == 0 {
+            client.0.get_item(_request).await
+        } else {
+            client.1[index-1].get_item(_request).await
         };
         
         match resp {
