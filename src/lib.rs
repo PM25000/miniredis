@@ -2,9 +2,11 @@
 
 use std::hash::Hash;
 use std::hash::Hasher;
-
+use std::sync::{Mutex, Arc};
+use std::collections::HashMap;
 use volo_gen::miniredis;
-
+use lazy_static::lazy_static;
+use volo::FastStr;
 pub struct SlaveServiceS;
 
 #[volo::async_trait]
@@ -36,6 +38,11 @@ impl volo_gen::miniredis::SlaveService for SlaveServiceS {
 
 pub struct MasterServiceS;
 
+type Db = Arc<Mutex<HashMap<FastStr, FastStr>>>;
+lazy_static! {
+    static ref DB: Db = Arc::new(Mutex::new(HashMap::new()));
+}
+
 #[volo::async_trait]
 impl volo_gen::miniredis::MasterService for MasterServiceS {
     async fn set_item(
@@ -43,7 +50,13 @@ impl volo_gen::miniredis::MasterService for MasterServiceS {
         _request: volo_gen::miniredis::SetItemRequest,
     ) -> ::core::result::Result<volo_gen::miniredis::SetItemResponse, ::volo_thrift::AnyhowError>
     {
-        Ok(Default::default())
+        println!("set_item");
+        println!("{}:{}", _request.kv.key.to_string(), _request.kv.value.to_string());
+        let mut db = DB.lock().unwrap();
+        db.insert(_request.kv.key, _request.kv.value);
+        Ok(volo_gen::miniredis::SetItemResponse {
+            message: FastStr::from("OK"),
+        })
     }
     async fn delete_item(
         &self,
@@ -57,7 +70,22 @@ impl volo_gen::miniredis::MasterService for MasterServiceS {
         _request: volo_gen::miniredis::GetItemRequest,
     ) -> ::core::result::Result<volo_gen::miniredis::GetItemResponse, ::volo_thrift::AnyhowError>
     {
-        Ok(Default::default())
+        println!("get_item");
+        println!("{}", _request.key.to_string());
+        let db = DB.lock().unwrap();
+        let value = db.get(&_request.key);
+        match value {
+            Some(v) => {
+                let mut resp = volo_gen::miniredis::GetItemResponse::default();
+                resp.value = Some(v.clone());
+                Ok(resp)
+            }
+            None =>{
+                let mut resp = volo_gen::miniredis::GetItemResponse::default();
+                resp.value = None;
+                Ok(resp)
+            }
+        }
     }
 }
 
