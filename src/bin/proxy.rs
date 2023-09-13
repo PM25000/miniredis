@@ -3,7 +3,7 @@
 use std::io::Read;
 use std::{net::SocketAddr, fs::File};
 
-use mini_redis::S; 
+use mini_redis::ProxyServiceS as S; 
 use serde::Serialize;
 use serde::Deserialize;
 use volo_gen::miniredis;
@@ -33,19 +33,19 @@ async fn main() {
 
     for addr in data.master {
         let addr = volo::net::Address::from(addr);
+        tracing::info!("master: {:?}", addr);
         let client = miniredis::MasterServiceClientBuilder::new("volo-example")
             .address(addr)
             .build();
         terminals.master.push(client);
-        tracing::info!("master: {:?}", addr);
     }
     for addr in data.slave {
         let addr = volo::net::Address::from(addr);
+        tracing::info!("slave: {:?}", addr);
         let client = miniredis::SlaveServiceClientBuilder::new("volo-example")
             .address(addr)
             .build();
         terminals.slave.push(client);
-        tracing::info!("slave: {:?}", addr);
     }
 
     let ss = S {
