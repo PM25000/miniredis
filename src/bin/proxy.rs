@@ -8,11 +8,16 @@ use serde::Serialize;
 use serde::Deserialize;
 use volo_gen::miniredis;
 
-#[derive(Debug, Serialize, Deserialize)]
+// #[derive(Debug, Serialize, Deserialize)]
+type ProxyConfig = Vec<ProxyMaster>;
 
-struct ProxyConfig {
-    master: Vec<(SocketAddr, Vec<SocketAddr>)>,
+
+#[derive(Debug, Serialize, Deserialize)]
+struct ProxyMaster {
+    master: SocketAddr,
+    slave: Vec<SocketAddr>,
 }
+
 struct ProxyTerminals {
     master: Vec<(miniredis::MasterServiceClient, Vec<miniredis::SlaveServiceClient>)>,
 }
@@ -35,7 +40,8 @@ async fn main() {
         master: Vec::new(),
     };
     let mut index = 0;
-    for (addr,slave) in data.master.into_iter() {
+    for master_item in data.into_iter() {
+        let ProxyMaster { master: addr, slave } = master_item;
         let addr = volo::net::Address::from(addr);
         tracing::info!("master: {:?}", addr);
         let client = miniredis::MasterServiceClientBuilder::new(addr.to_string())
