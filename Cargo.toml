@@ -1,11 +1,13 @@
 [package]
-name = "miniredis"
+name = "volo_example"
 version = "0.1.0"
 edition.workspace = true
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+lazy_static = "1"
+
 volo-gen = { path = "./volo-gen" }
 
 volo.workspace = true
@@ -15,6 +17,10 @@ pilota.workspace = true
 anyhow.workspace = true
 async-trait.workspace = true
 tokio = { workspace = true, features = ["full"] }
+
+tracing = "0.1"
+tracing-subscriber = "0.3"
+motore = "0.3.3"
 
 [profile.release]
 opt-level = 3
@@ -43,4 +49,5 @@ pilota = "*"
 
 anyhow = "1"
 async-trait = "0.1"
-tokio = "1"
+tokio = { version = "1", features = ["full"] }
+
