@@ -9,48 +9,53 @@ use serde::Deserialize;
 use volo_gen::miniredis;
 
 #[derive(Debug, Serialize, Deserialize)]
+
 struct ProxyConfig {
-    master: Vec<SocketAddr>,
-    slave: Vec<SocketAddr>,
+    master: Vec<(SocketAddr, Vec<SocketAddr>)>,
 }
 struct ProxyTerminals {
-    master: Vec<miniredis::MasterServiceClient>,
-    slave: Vec<miniredis::SlaveServiceClient>,
+    master: Vec<(miniredis::MasterServiceClient, Vec<miniredis::SlaveServiceClient>)>,
 }
 
 #[volo::main]
 async fn main() {
 
+    tracing_subscriber::fmt::init();
+
     let mut settings = File::open("proxy.config").unwrap();
     let mut contents = String::new();
+
     settings.read_to_string(&mut contents).unwrap();
+    
     tracing::info!("proxy.config: {}", contents);
+    // println!("proxy.config: {}", contents);
+
     let data = serde_json::from_str::<ProxyConfig>(&contents).unwrap();
     let mut terminals = ProxyTerminals {
         master: Vec::new(),
-        slave: Vec::new(),
     };
-
-    for addr in data.master {
+    let mut index = 0;
+    for (addr,slave) in data.master.into_iter() {
         let addr = volo::net::Address::from(addr);
         tracing::info!("master: {:?}", addr);
-        let client = miniredis::MasterServiceClientBuilder::new("volo-example")
+        let client = miniredis::MasterServiceClientBuilder::new(addr.to_string())
             .address(addr)
             .build();
-        terminals.master.push(client);
+        terminals.master.push((client, Vec::new()));
+        for addr in slave {
+            let addr = volo::net::Address::from(addr);
+            tracing::info!("slave: {:?}", addr);
+            let client = miniredis::SlaveServiceClientBuilder::new(addr.to_string())
+                .address(addr)
+                .build();
+            terminals.master[index].1.push(client);
+        }
+        index += 1;
     }
-    for addr in data.slave {
-        let addr = volo::net::Address::from(addr);
-        tracing::info!("slave: {:?}", addr);
-        let client = miniredis::SlaveServiceClientBuilder::new("volo-example")
-            .address(addr)
-            .build();
-        terminals.slave.push(client);
-    }
+    
 
     let ss = S {
         master: terminals.master,
-        slave: terminals.slave,
     };
 
 
