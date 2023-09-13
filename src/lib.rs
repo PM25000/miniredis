@@ -1,9 +1,11 @@
 #![feature(impl_trait_in_assoc_type)]
 
-pub struct S;
+use volo_gen::miniredis;
+
+pub struct SlaveServiceS;
 
 #[volo::async_trait]
-impl volo_gen::miniredis::SlaveService for S {
+impl volo_gen::miniredis::SlaveService for SlaveServiceS {
     async fn get_item(
         &self,
         _request: volo_gen::miniredis::GetItemRequest,
@@ -29,8 +31,10 @@ impl volo_gen::miniredis::SlaveService for S {
     }
 }
 
+pub struct MasterServiceS;
+
 #[volo::async_trait]
-impl volo_gen::miniredis::MasterService for S {
+impl volo_gen::miniredis::MasterService for MasterServiceS {
     async fn set_item(
         &self,
         _request: volo_gen::miniredis::SetItemRequest,
@@ -54,27 +58,32 @@ impl volo_gen::miniredis::MasterService for S {
     }
 }
 
+pub struct ProxyServiceS {
+    pub master: Vec<miniredis::MasterServiceClient>,
+    pub slave: Vec<miniredis::SlaveServiceClient>,
+}
+
 #[volo::async_trait]
-impl volo_gen::miniredis::ProxyService for S {
-	async fn set_item(
-		&self,
-		_request: volo_gen::miniredis::SetItemRequest,
-	) -> ::core::result::Result<volo_gen::miniredis::SetItemResponse, ::volo_thrift::AnyhowError>
-	{
-		Ok(Default::default())
-	}
-	async fn delete_item(
-		&self,
-		_request: volo_gen::miniredis::DeleteItemRequest,
-	) -> ::core::result::Result<volo_gen::miniredis::DeleteItemResponse, ::volo_thrift::AnyhowError>
-	{
-		Ok(Default::default())
-	}
-	async fn get_item(
-		&self,
-		_request: volo_gen::miniredis::GetItemRequest,
-	) -> ::core::result::Result<volo_gen::miniredis::GetItemResponse, ::volo_thrift::AnyhowError>
-	{
-		Ok(Default::default())
-	}
+impl volo_gen::miniredis::ProxyService for ProxyServiceS {
+    async fn set_item(
+        &self,
+        _request: volo_gen::miniredis::SetItemRequest,
+    ) -> ::core::result::Result<volo_gen::miniredis::SetItemResponse, ::volo_thrift::AnyhowError>
+    {
+        Ok(Default::default())
+    }
+    async fn delete_item(
+        &self,
+        _request: volo_gen::miniredis::DeleteItemRequest,
+    ) -> ::core::result::Result<volo_gen::miniredis::DeleteItemResponse, ::volo_thrift::AnyhowError>
+    {
+        Ok(Default::default())
+    }
+    async fn get_item(
+        &self,
+        _request: volo_gen::miniredis::GetItemRequest,
+    ) -> ::core::result::Result<volo_gen::miniredis::GetItemResponse, ::volo_thrift::AnyhowError>
+    {
+        Ok(Default::default())
+    }
 }
