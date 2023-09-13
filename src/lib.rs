@@ -1,13 +1,20 @@
 #![feature(impl_trait_in_assoc_type)]
 
+use lazy_static::lazy_static;
+use std::collections::HashMap;
 use std::hash::Hash;
 use std::hash::Hasher;
-use std::sync::{Mutex, Arc};
-use std::collections::HashMap;
-use volo_gen::miniredis;
-use lazy_static::lazy_static;
+use std::sync::{Arc, Mutex};
 use volo::FastStr;
-pub struct SlaveServiceS;
+use volo_gen::miniredis;
+
+lazy_static! {
+    static ref GLOBAL_HASH_MAP: Mutex<HashMap<String, String>> = Mutex::new(HashMap::new());
+}
+
+pub struct SlaveServiceS {
+    pub addr: volo::net::Address,
+}
 
 #[volo::async_trait]
 impl volo_gen::miniredis::SlaveService for SlaveServiceS {
@@ -16,14 +23,36 @@ impl volo_gen::miniredis::SlaveService for SlaveServiceS {
         _request: volo_gen::miniredis::GetItemRequest,
     ) -> ::core::result::Result<volo_gen::miniredis::GetItemResponse, ::volo_thrift::AnyhowError>
     {
-        Ok(Default::default())
+        if let Some(value) = GLOBAL_HASH_MAP
+            .lock()
+            .unwrap()
+            .get(&_request.key.to_string())
+        {
+            tracing::info!("get_item: {:?} in {:?}", _request, self.addr);
+            return Ok(volo_gen::miniredis::GetItemResponse {
+                value: Some(String::from(value).into()),
+            });
+        }
+        tracing::info!("get_item: {:?} in {:?}", _request, self.addr);
+        Ok(volo_gen::miniredis::GetItemResponse { value: None })
+        // Ok(Default::default())
     }
     async fn sync_set_item(
         &self,
         _request: volo_gen::miniredis::SyncSetItemRequest,
     ) -> ::core::result::Result<volo_gen::miniredis::SyncSetItemResponse, ::volo_thrift::AnyhowError>
     {
-        Ok(Default::default())
+        {
+            GLOBAL_HASH_MAP
+                .lock()
+                .unwrap()
+                .insert(_request.kv.key.to_string(), _request.kv.value.to_string());
+        }
+        tracing::info!("sync_set_item: {:?} in {:?}", _request, self.addr);
+        Ok(volo_gen::miniredis::SyncSetItemResponse {
+            message: String::from("OK").into(),
+        })
+        // Ok(Default::default())
     }
     async fn sync_delete_item(
         &self,
@@ -36,11 +65,9 @@ impl volo_gen::miniredis::SlaveService for SlaveServiceS {
     }
 }
 
-pub struct MasterServiceS;
-
-type Db = Arc<Mutex<HashMap<FastStr, FastStr>>>;
-lazy_static! {
-    static ref DB: Db = Arc::new(Mutex::new(HashMap::new()));
+pub struct MasterServiceS {
+    pub slave: Vec<miniredis::SlaveServiceClient>,
+    pub addr: volo::net::Address,
 }
 
 #[volo::async_trait]
@@ -50,12 +77,32 @@ impl volo_gen::miniredis::MasterService for MasterServiceS {
         _request: volo_gen::miniredis::SetItemRequest,
     ) -> ::core::result::Result<volo_gen::miniredis::SetItemResponse, ::volo_thrift::AnyhowError>
     {
-        println!("set_item");
-        println!("{}:{}", _request.kv.key.to_string(), _request.kv.value.to_string());
-        let mut db = DB.lock().unwrap();
-        db.insert(_request.kv.key, _request.kv.value);
+        {
+            GLOBAL_HASH_MAP
+                .lock()
+                .unwrap()
+                .insert(_request.kv.key.to_string(), _request.kv.value.to_string());
+        }
+        for s in &self.slave {
+            let resp = s
+                .sync_set_item(volo_gen::miniredis::SyncSetItemRequest {
+                    kv: volo_gen::miniredis::Kv {
+                        key: _request.kv.key.clone(),
+                        value: _request.kv.value.clone(),
+                    },
+                })
+                .await;
+            match resp {
+                Ok(_resp) => {
+                    continue;
+                }
+                Err(err) => return Err(err.into()),
+            }
+        }
+        tracing::info!("set_item: {:?} in {:?}", _request, self.addr);
+
         Ok(volo_gen::miniredis::SetItemResponse {
-            message: FastStr::from("OK"),
+            message: String::from("Ok").into(),
         })
     }
     async fn delete_item(
@@ -70,27 +117,26 @@ impl volo_gen::miniredis::MasterService for MasterServiceS {
         _request: volo_gen::miniredis::GetItemRequest,
     ) -> ::core::result::Result<volo_gen::miniredis::GetItemResponse, ::volo_thrift::AnyhowError>
     {
-        println!("get_item");
-        println!("{}", _request.key.to_string());
-        let db = DB.lock().unwrap();
-        let value = db.get(&_request.key);
-        match value {
-            Some(v) => {
-                let mut resp = volo_gen::miniredis::GetItemResponse::default();
-                resp.value = Some(v.clone());
-                Ok(resp)
-            }
-            None =>{
-                let mut resp = volo_gen::miniredis::GetItemResponse::default();
-                resp.value = None;
-                Ok(resp)
-            }
+        if let Some(value) = GLOBAL_HASH_MAP
+            .lock()
+            .unwrap()
+            .get(&_request.key.to_string())
+        {
+            tracing::info!("get_item: {:?} in {:?}", _request, self.addr);
+            return Ok(volo_gen::miniredis::GetItemResponse {
+                value: Some(String::from(value).into()),
+            });
         }
+        tracing::info!("get_item: {:?} in {:?}", _request, self.addr);
+        Ok(volo_gen::miniredis::GetItemResponse { value: None })
     }
 }
 
 pub struct ProxyServiceS {
-    pub master: Vec<(miniredis::MasterServiceClient, Vec<miniredis::SlaveServiceClient>)>,
+    pub master: Vec<(
+        miniredis::MasterServiceClient,
+        Vec<miniredis::SlaveServiceClient>,
+    )>,
 }
 
 #[volo::async_trait]
@@ -110,7 +156,7 @@ impl volo_gen::miniredis::ProxyService for ProxyServiceS {
         let resp = client.0.set_item(_request).await;
         match resp {
             Ok(info) => {
-                tracing::info!("set_item: {:?}", info);
+                tracing::info!("set_item: {:?} in {:?}", info, index);
                 Ok(info)
             }
             Err(e) => {
@@ -138,17 +184,18 @@ impl volo_gen::miniredis::ProxyService for ProxyServiceS {
         let hash = hasher.finish() as usize;
         let index = hash % count;
         let client = &self.master[index];
-        let count = client.1.len()+1;
+        let count = client.1.len() + 1;
+        let masterindex = index;
         let index = hash % count;
         let resp = if index == 0 {
             client.0.get_item(_request).await
         } else {
-            client.1[index-1].get_item(_request).await
+            client.1[index - 1].get_item(_request).await
         };
-        
+
         match resp {
             Ok(info) => {
-                tracing::info!("get_item: {:?}", info);
+                tracing::info!("get_item: {:?} in {:?} in {:?}", info, masterindex, index);
                 Ok(info)
             }
             Err(e) => {
