@@ -29,7 +29,9 @@ async fn main(){
         kv:volo_gen::miniredis::Kv{
             key: "k1".into(),
             value: "111".into(),
-        }
+        },
+        expire:None,
+        transaction_id:None,
     }).await;
     match resp{
         Ok(msg) =>println!("{}",msg.message),
