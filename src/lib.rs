@@ -2,6 +2,7 @@
 
 use lazy_static::lazy_static;
 use std::collections::HashMap;
+use std::fs::File;
 use std::hash::Hash;
 use std::hash::Hasher;
 use std::sync::{Arc, Mutex};
@@ -49,17 +50,7 @@ impl volo_gen::miniredis::SlaveService for SlaveServiceS {
                 .insert(_request.kv.key.to_string(), _request.kv.value.to_string());
         }
         tracing::info!("sync_set_item: {:?} in {:?}", _request, self.addr);
-        let protocol_text = format!(
-            "*3\r\n$3\r\nSET\r\n${}\r\n{}\r\n${}\r\n{}\r\n",
-            _request.kv.key.to_string().len(),
-            _request.kv.key.to_string(),
-            _request.kv.value.to_string().len(),
-            _request.kv.value.to_string()
-        );
-        // convert the protocol text to bytes
-        let protocol_bytes = protocol_text.as_bytes();
-        let mut file = File::open("../../redis.aof").unwrap();
-        std::io::Write::write_all(&mut file, protocol_bytes).unwrap();
+
         Ok(volo_gen::miniredis::SyncSetItemResponse {
             message: String::from("OK").into(),
         })
@@ -111,6 +102,15 @@ impl volo_gen::miniredis::MasterService for MasterServiceS {
             }
         }
         tracing::info!("set_item: {:?} in {:?}", _request, self.addr);
+        let protocol_text = format!(
+            "{} {}\r\n",
+            _request.kv.key.to_string(),
+            _request.kv.value.to_string()
+        );
+        // convert the protocol text to bytes
+        let protocol_bytes = protocol_text.as_bytes();
+        let mut file = File::open("../../redis.aof").unwrap();
+        std::io::Write::write_all(&mut file, protocol_bytes).unwrap();
 
         Ok(volo_gen::miniredis::SetItemResponse {
             message: String::from("Ok").into(),
