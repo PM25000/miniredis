@@ -64,6 +64,14 @@ struct MultiResponse {
     1: required i64 transactionId,
 }
 
+struct ServerMultiRequest {
+    1: required i64 transactionId,
+}
+
+struct ServerMultiResponse {
+    1: required string message,
+}
+
 struct ExecRequest {
     1: required i64 transactionId,
 }
@@ -86,7 +94,7 @@ service MasterService {
     SetItemResponse SetItem(1: SetItemRequest request),
     DeleteItemResponse DeleteItem(1: DeleteItemRequest request),
     WatchResponse Watch(1: WatchRequest request),
-    MultiResponse Multi(1: MultiRequest request),
+    ServerMultiResponse ServerMulti(1: ServerMultiRequest request),
     ExecResponse Exec(1: ExecRequest request),
 }
 

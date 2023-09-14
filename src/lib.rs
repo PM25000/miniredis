@@ -1,5 +1,6 @@
 #![feature(impl_trait_in_assoc_type)]
 
+use anyhow::anyhow;
 use lazy_static::lazy_static;
 use std::collections::HashMap;
 use std::hash::Hash;
@@ -7,12 +8,13 @@ use std::hash::Hasher;
 use std::sync::{Arc, Mutex};
 use volo::FastStr;
 use volo_gen::miniredis;
-use anyhow::anyhow;
 
 lazy_static! {
     static ref GLOBAL_HASH_MAP: Mutex<HashMap<String, String>> = Mutex::new(HashMap::new());
-    static ref GLOBAL_COMMAND_MAP: Mutex<HashMap<i64, HashMap<String, String>>> = Mutex::new(HashMap::new());
-    static ref GLOBAL_WATCHED_VALUE: Mutex<HashMap<i64, HashMap<String, String>>> = Mutex::new(HashMap::new());
+    static ref GLOBAL_COMMAND_MAP: Mutex<HashMap<i64, HashMap<String, String>>> =
+        Mutex::new(HashMap::new());
+    static ref GLOBAL_WATCHED_VALUE: Mutex<HashMap<i64, HashMap<String, String>>> =
+        Mutex::new(HashMap::new());
 }
 
 pub struct SlaveServiceS {
@@ -45,7 +47,7 @@ impl volo_gen::miniredis::SlaveService for SlaveServiceS {
         &self,
         _request: volo_gen::miniredis::SyncSetItemRequest,
     ) -> ::core::result::Result<volo_gen::miniredis::SyncSetItemResponse, ::volo_thrift::AnyhowError>
-    {   
+    {
         // if external_variable != self.master{
         //     return Ok(volo_gen::miniredis::SyncSetItemResponse {
         //         message: String::from("Not master call").into(),
@@ -139,6 +141,29 @@ impl volo_gen::miniredis::MasterService for MasterServiceS {
         tracing::info!("get_item: {:?} in {:?}", _request, self.addr);
         Ok(volo_gen::miniredis::GetItemResponse { value: None })
     }
+
+    async fn server_multi(
+        &self,
+        _request: volo_gen::miniredis::ServerMultiRequest,
+    ) -> ::core::result::Result<volo_gen::miniredis::ServerMultiResponse, ::volo_thrift::AnyhowError>
+    {
+        Ok(Default::default())
+    }
+
+    async fn exec(
+        &self,
+        _request: volo_gen::miniredis::ExecRequest,
+    ) -> ::core::result::Result<volo_gen::miniredis::ExecResponse, ::volo_thrift::AnyhowError> {
+        Ok(Default::default())
+    }
+
+    async fn watch(
+        &self,
+        _request: volo_gen::miniredis::WatchRequest,
+    ) -> ::core::result::Result<volo_gen::miniredis::WatchResponse, ::volo_thrift::AnyhowError>
+    {
+        Ok(Default::default())
+    }
 }
 
 pub struct ProxyServiceS {
@@ -213,45 +238,66 @@ impl volo_gen::miniredis::ProxyService for ProxyServiceS {
             }
         }
     }
-}
 
+    async fn multi(
+        &self,
+        _request: volo_gen::miniredis::MultiRequest,
+    ) -> ::core::result::Result<volo_gen::miniredis::MultiResponse, ::volo_thrift::AnyhowError>
+    {
+        Ok(Default::default())
+    }
+
+    async fn exec(
+        &self,
+        _request: volo_gen::miniredis::ExecRequest,
+    ) -> ::core::result::Result<volo_gen::miniredis::ExecResponse, ::volo_thrift::AnyhowError> {
+        Ok(Default::default())
+    }
+
+    async fn watch(
+        &self,
+        _request: volo_gen::miniredis::WatchRequest,
+    ) -> ::core::result::Result<volo_gen::miniredis::WatchResponse, ::volo_thrift::AnyhowError>
+    {
+        Ok(Default::default())
+    }
+}
 
 #[derive(Clone)]
 pub struct ContextService<S>(S);
 
 #[volo::service]
-impl<Req,S,Cx> volo::Service<Cx,Req> for ContextService<S>
+impl<Req, S, Cx> volo::Service<Cx, Req> for ContextService<S>
 where
-	Req: std::fmt::Debug +Send+'static,
-	S: Send+'static+volo::Service<Cx,Req>+Sync,
-	S::Response: std::fmt::Debug,
-	S::Error: std::fmt::Debug,
-	Cx: Send+'static+volo::context::Context,
-	anyhow::Error: Into<S::Error>
+    Req: std::fmt::Debug + Send + 'static,
+    S: Send + 'static + volo::Service<Cx, Req> + Sync,
+    S::Response: std::fmt::Debug,
+    S::Error: std::fmt::Debug,
+    Cx: Send + 'static + volo::context::Context,
+    anyhow::Error: Into<S::Error>,
 {
-	async fn call(&self,cx:&mut Cx,req:Req)->Result<S::Response,S::Error> {
+    async fn call(&self, cx: &mut Cx, req: Req) -> Result<S::Response, S::Error> {
         // println!("\n\nin layer\n\n");
         // tracing_subscriber::fmt::init();
-        let callee=&cx.rpc_info().callee().unwrap().service_name;
+        let callee = &cx.rpc_info().callee().unwrap().service_name;
         // let caller=&cx.rpc_info().caller().unwrap();
         // let caller=format!("{:?}",caller);
         // tracing::info!("\n\n{:?}\n\n",callee);
-        tracing::info!("\n\n{:?}\n\n",callee);
-        if !callee.contains("127.0.0.1:8080"){
+        tracing::info!("\n\n{:?}\n\n", callee);
+        if !callee.contains("127.0.0.1:8080") {
             Err(anyhow!("Not master call").into())
-        }else{
-            self.0.call(cx,req).await
+        } else {
+            self.0.call(cx, req).await
         }
-        
-	}
+    }
 }
 
 pub struct ContextLayer;
 
-impl<S> volo::Layer<S> for ContextLayer{
-	type Service = ContextService<S>;//
+impl<S> volo::Layer<S> for ContextLayer {
+    type Service = ContextService<S>; //
 
-	fn layer(self,inner: S)->Self::Service{
-		ContextService (inner)
-	}
+    fn layer(self, inner: S) -> Self::Service {
+        ContextService(inner)
+    }
 }
