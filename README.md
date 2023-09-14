@@ -123,7 +123,32 @@ k1=111 from slave
 
 ## Redis Cluster
 
+### 配置文件
+
+采用`json`文件来配置集群中的各个节点的端口.
+
+文件位置为`/miniredis/proxy.config`
+
+格式为
+```
+[
+    {
+        "master": "127.0.0.1:8280",
+        "slave": ["127.0.0.1:8281"]
+    },
+    {
+        "master": "127.0.0.1:8380",
+        "slave": ["127.0.0.1:8381"]
+    },
+    {
+        "master": "127.0.0.1:8480",
+        "slave": ["127.0.0.1:8481"]
+    }
+]
+```
+
 ## Transaction
+
 
 ### Master part
 
@@ -169,5 +194,112 @@ for (kv:KV) in GLOBAL_COMMAND_MAP{
 
 ```
 
-### Proxy part
+## Proxy
 
+主要实现所有函数的转发，以及 transaction id 的生成
+
+当接受到`multi`命令时,会生成一个`transaction id`,并且将该`transaction id`返回给客户端.
+
+其他命令携带的`transaction id`会被转发到对应的`master`节点或者`slave`节点.
+
+### 命令实现
+
+* get\
+    通过`hash`函数来计算`key`所在的`master`节点或者`slave`节点,并且调用相应的函数.
+
+* set\
+    通过`hash`函数来计算`key`所在的`master`节点,并且调用相应的函数.
+
+* multi\
+    生成`transaction id`并返回
+
+* watch\
+    根据`key`计算出所在的`master`节点,并且调用相应的函数.
+
+* exec\
+    根据`transaction id`执行相关事务
+
+### hash实现
+
+```rust
+        let count = self.master.len();
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        let key = &_request.key;
+        key.hash(&mut hasher);
+        let hash = hasher.finish() as usize;
+        let index = hash % count;
+        let client = &self.master[index];
+
+```
+
+### proxy实现
+
+```thrfit
+service ProxyService {
+    GetItemResponse GetItem(1: GetItemRequest request),
+    SetItemResponse SetItem(1: SetItemRequest request),
+    DeleteItemResponse DeleteItem(1: DeleteItemRequest request),
+    WatchResponse Watch(1: WatchRequest request),
+    MultiResponse Multi(1: MultiRequest request),
+    ExecResponse Exec(1: ExecRequest request),
+}
+```
+
+### 初始化实现
+
+先读取配置文件，启动多个RPC服务，然后启动proxy服务
+
+#### 存储
+
+```rust
+#[derive(Debug, Serialize, Deserialize)]
+struct ProxyMaster {
+    master: SocketAddr,
+    slave: Vec<SocketAddr>,
+}
+
+struct ProxyTerminals {
+    master: Vec<(miniredis::MasterServiceClient, Vec<miniredis::SlaveServiceClient>)>,
+}
+
+```
+
+#### 初始化
+
+```rust
+
+    let mut index = 0;
+    for master_item in data.into_iter() {
+        let ProxyMaster { master: addr, slave } = master_item;
+        let addr = volo::net::Address::from(addr);
+        tracing::info!("master: {:?}", addr);
+        let client = miniredis::MasterServiceClientBuilder::new(addr.to_string())
+            .address(addr)
+            .build();
+        terminals.master.push((client, Vec::new()));
+        for addr in slave {
+            let addr = volo::net::Address::from(addr);
+            tracing::info!("slave: {:?}", addr);
+            let client = miniredis::SlaveServiceClientBuilder::new(addr.to_string())
+                .address(addr)
+                .build();
+            terminals.master[index].1.push(client);
+        }
+        index += 1;
+    }
+    let ss = S {
+        master: terminals.master,
+    };
+
+
+    let addr: SocketAddr = "127.0.0.1:10818".parse().unwrap();
+    let addr = volo::net::Address::from(addr);
+
+    volo_gen::miniredis::ProxyServiceServer::new(ss)
+        .run(addr)
+        .await
+        .unwrap();
+
+    tracing::info!("Bye!");
+
+```
