@@ -2,11 +2,11 @@
 
 use anyhow::anyhow;
 use lazy_static::lazy_static;
-use tracing_subscriber::fmt::format;
 use std::collections::HashMap;
 use std::hash::Hash;
 use std::hash::Hasher;
 use std::sync::{Arc, Mutex};
+use tracing_subscriber::fmt::format;
 use volo::FastStr;
 use volo_gen::miniredis;
 
@@ -88,18 +88,31 @@ impl volo_gen::miniredis::MasterService for MasterServiceS {
         &self,
         _request: volo_gen::miniredis::SetItemRequest,
     ) -> ::core::result::Result<volo_gen::miniredis::SetItemResponse, ::volo_thrift::AnyhowError>
-    {   
-        if let Some(id) =_request.transaction_id{
-            GLOBAL_COMMAND_MAP.lock()
-                                .unwrap()
-                                .entry(id)
-                                .or_insert_with(|| HashMap::new())
-                                .entry(_request.kv.key.to_string())
-                                .and_modify(|v| *v = _request.kv.value.to_string());
+    {
+        if let Some(id) = _request.transaction_id {
+            tracing::info!("set_item: {:?} in {:?} with {:?} ", _request, self.addr, id);
+            {
+                GLOBAL_COMMAND_MAP
+                    .lock()
+                    .unwrap()
+                    .entry(id)
+                    .or_insert_with(|| HashMap::new())
+                    .insert(_request.kv.key.to_string(), _request.kv.value.to_string());
+
+                // .and_modify(|v| *v = _request.kv.value.to_string());
+            }
+            let tmp_t = GLOBAL_COMMAND_MAP.lock().unwrap();
+            let tmp_t = tmp_t.get(&id);
+            tracing::info!(
+                "set_item: {:?} in {:?} with {:?} ",
+                _request,
+                self.addr,
+                tmp_t
+            );
             Ok(volo_gen::miniredis::SetItemResponse {
                 message: String::from("Ok").into(),
             })
-        }else{
+        } else {
             {
                 GLOBAL_HASH_MAP
                     .lock()
@@ -128,7 +141,6 @@ impl volo_gen::miniredis::MasterService for MasterServiceS {
                 message: String::from("Ok").into(),
             })
         }
-        
     }
     async fn delete_item(
         &self,
@@ -160,10 +172,16 @@ impl volo_gen::miniredis::MasterService for MasterServiceS {
         &self,
         _request: volo_gen::miniredis::ServerMultiRequest,
     ) -> ::core::result::Result<volo_gen::miniredis::ServerMultiResponse, ::volo_thrift::AnyhowError>
-    {   
-        GLOBAL_COMMAND_MAP.lock().unwrap().insert(_request.transaction_id,HashMap::new());
-        GLOBAL_WATCHED_VALUE.lock().unwrap().insert(_request.transaction_id,HashMap::new());
-        Ok(volo_gen::miniredis::ServerMultiResponse{
+    {
+        GLOBAL_COMMAND_MAP
+            .lock()
+            .unwrap()
+            .insert(_request.transaction_id, HashMap::new());
+        GLOBAL_WATCHED_VALUE
+            .lock()
+            .unwrap()
+            .insert(_request.transaction_id, HashMap::new());
+        Ok(volo_gen::miniredis::ServerMultiResponse {
             message: "Get into transaction!".to_string().into(),
         })
         // Ok(Default::default())
@@ -173,62 +191,60 @@ impl volo_gen::miniredis::MasterService for MasterServiceS {
         &self,
         _request: volo_gen::miniredis::ExecRequest,
     ) -> ::core::result::Result<volo_gen::miniredis::ExecResponse, ::volo_thrift::AnyhowError> {
+        
         {
-            let local_watch_t=GLOBAL_WATCHED_VALUE.lock().unwrap();
-            let inner=local_watch_t.get(&_request.transaction_id).unwrap();
-            let globla_t=GLOBAL_HASH_MAP.lock().unwrap();
-            for (key,op_value) in inner.iter(){
-                if let Some(new_value) = op_value{
-                    if &globla_t[key] == new_value{
+            tracing::info!("exec: {:?} in {:?}", _request, self.addr);
+            let local_watch_t = GLOBAL_WATCHED_VALUE.lock().unwrap();
+            let inner = local_watch_t.get(&_request.transaction_id).unwrap();
+            let globla_t = GLOBAL_HASH_MAP.lock().unwrap();
+            for (key, op_value) in inner.iter() {
+                if let Some(new_value) = op_value {
+                    if &globla_t[key] == new_value {
                         continue;
-                    }else{
-                        let _= local_watch_t.get(&_request.transaction_id).clone();
-                        let msg=format!("{} was been changed",key);
-                        return Ok(volo_gen::miniredis::ExecResponse{
-                                    message:msg.into(),
-                                });
+                    } else {
+                        let _ = local_watch_t.get(&_request.transaction_id).clone();
+                        let msg = format!("{} was been changed", key);
+                        return Err(anyhow::Error::msg(msg).into());
                     }
-                }else{
-                    if globla_t.contains_key(key){
-                        let _= local_watch_t.get(&_request.transaction_id).clone();
-                        let msg=format!("{} was been changed",key);
-                        return Ok(volo_gen::miniredis::ExecResponse{
-                            message:msg.into(),
-                        });
-                    }else{
+                } else {
+                    if globla_t.contains_key(key) {
+                        let _ = local_watch_t.get(&_request.transaction_id).clone();
+                        let msg = format!("{} was been changed", key);
+                        return Err(anyhow::Error::msg(msg).into());
+                    } else {
                         continue;
                     }
                 }
             }
-            let _= local_watch_t.get(&_request.transaction_id).clone();
+            let _ = local_watch_t.get(&_request.transaction_id).clone();
         }
-        {   
-            let mut inner:HashMap<String,String>=HashMap::new();
+
+        {
+            let mut inner: HashMap<String, String> = HashMap::new();
             {
-                let mut local_set=GLOBAL_COMMAND_MAP.lock().unwrap();
+                let mut local_set = GLOBAL_COMMAND_MAP.lock().unwrap();
                 if let Some(inner_map) = local_set.get_mut(&_request.transaction_id) {
                     // 复制最内层的 HashMap。
                     inner = inner_map.clone();
-            
+
                     // 删除最内层的 HashMap。
                     local_set.remove(&_request.transaction_id);
-            
                 }
             }
-            
-            for(key,value) in inner.iter(){
+            tracing::info!("inner {:?}", inner);
+            for (key, value) in inner.iter() {
                 {
                     GLOBAL_HASH_MAP
                         .lock()
                         .unwrap()
-                        .insert(key.to_string(),value.to_string());
+                        .insert(key.to_string(), value.to_string());
                 }
                 for s in &self.slave {
                     let resp = s
                         .sync_set_item(volo_gen::miniredis::SyncSetItemRequest {
                             kv: volo_gen::miniredis::Kv {
-                                key: String::from("key").into(),
-                                value: String::from("value").into(),
+                                key: key.to_string().into(),
+                                value: value.to_string().into(),
                             },
                         })
                         .await;
@@ -242,12 +258,11 @@ impl volo_gen::miniredis::MasterService for MasterServiceS {
             }
             // let _= local_set.get(&_request.transaction_id).clone();
         }
-        
-        
-        Ok(volo_gen::miniredis::ExecResponse{
-            message:"EXEC successfully".into()
-        })  
-        
+
+        Ok(volo_gen::miniredis::ExecResponse {
+            message: "EXEC successfully".into(),
+        })
+
         // Ok(Default::default())
     }
 
@@ -255,31 +270,37 @@ impl volo_gen::miniredis::MasterService for MasterServiceS {
         &self,
         _request: volo_gen::miniredis::WatchRequest,
     ) -> ::core::result::Result<volo_gen::miniredis::WatchResponse, ::volo_thrift::AnyhowError>
-    {   
+    {
         {
-            if let Some(value) = GLOBAL_HASH_MAP.lock()
-                            .unwrap()
-                            .get(&_request.key.to_string()){
-                                // let local_watchT=GLOBAL_WATCHED_VALUE.lock().unwrap().get
-                                GLOBAL_WATCHED_VALUE.lock()
-                                                    .unwrap()
-                                                    .entry(_request.transaction_id)
-                                                    .or_insert_with(|| HashMap::new())
-                                                    .entry(_request.key.to_string())
-                                                    .and_modify(|v| *v = Some(value.clone()));
-                                                    // .get(&_request.transaction_id)
-                                                    // .unwrap()
-                                                    // .insert(_request.key.to_string().clone(),Some(value.clone()));
-                            }else{
-                                GLOBAL_WATCHED_VALUE.lock()
-                                                    .unwrap()
-                                                    .entry(_request.transaction_id)
-                                                    .or_insert_with(|| HashMap::new())
-                                                    .entry(_request.key.to_string())
-                                                    .and_modify(|v| *v = None);
-                            }
+            if let Some(value) = GLOBAL_HASH_MAP
+                .lock()
+                .unwrap()
+                .get(&_request.key.to_string())
+            {
+                // let local_watchT=GLOBAL_WATCHED_VALUE.lock().unwrap().get
+                GLOBAL_WATCHED_VALUE
+                    .lock()
+                    .unwrap()
+                    .entry(_request.transaction_id)
+                    .or_insert_with(|| HashMap::new())
+                    .insert(_request.key.to_string(), Some(value.clone()));
+                    // .entry(_request.key.to_string())
+                    // .and_modify(|v| *v = Some(value.clone()));
+                // .get(&_request.transaction_id)
+                // .unwrap()
+                // .insert(_request.key.to_string().clone(),Some(value.clone()));
+            } else {
+                GLOBAL_WATCHED_VALUE
+                    .lock()
+                    .unwrap()
+                    .entry(_request.transaction_id)
+                    .or_insert_with(|| HashMap::new())
+                    .insert(_request.key.to_string(), None);
+                    // .entry(_request.key.to_string())
+                    // .and_modify(|v| *v = None);
+            }
         }
-        Ok(volo_gen::miniredis::WatchResponse{
+        Ok(volo_gen::miniredis::WatchResponse {
             message: "Watch has been set".into(),
         })
     }
@@ -399,9 +420,12 @@ impl volo_gen::miniredis::ProxyService for ProxyServiceS {
         };
         let mut index = 0;
         for client in &self.master {
-            let resp = client.0.server_multi(volo_gen::miniredis::ServerMultiRequest {
-                transaction_id: new_id,
-            }).await;
+            let resp = client
+                .0
+                .server_multi(volo_gen::miniredis::ServerMultiRequest {
+                    transaction_id: new_id,
+                })
+                .await;
             match resp {
                 Ok(info) => {
                     tracing::info!("multi: {:?} in {:?}", info, index);
@@ -415,7 +439,6 @@ impl volo_gen::miniredis::ProxyService for ProxyServiceS {
         Ok(volo_gen::miniredis::MultiResponse {
             transaction_id: new_id,
         })
-        
     }
 
     async fn exec(
@@ -423,6 +446,7 @@ impl volo_gen::miniredis::ProxyService for ProxyServiceS {
         _request: volo_gen::miniredis::ExecRequest,
     ) -> ::core::result::Result<volo_gen::miniredis::ExecResponse, ::volo_thrift::AnyhowError> {
         let mut index = 0;
+        let mut err_flag = false;
         for client in &self.master {
             let resp = client.0.exec(_request.clone()).await;
             match resp {
@@ -431,16 +455,19 @@ impl volo_gen::miniredis::ProxyService for ProxyServiceS {
                 }
                 Err(e) => {
                     tracing::error!("{:?}", e);
+                    err_flag = true;
                 }
             };
             index += 1;
         }
-        Ok(volo_gen::miniredis::ExecResponse {
-            message: String::from("OK").into(),
-        })
+        if err_flag {
+            Err(anyhow!("EXEC failed").into())
+        } else {
+            Ok(volo_gen::miniredis::ExecResponse {
+                message: "EXEC successfully".into(),
+            })
+        }
     }
-
-
 }
 
 #[derive(Clone)]

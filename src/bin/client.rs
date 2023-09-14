@@ -63,6 +63,12 @@ async fn delete_item(keys: Vec<FastStr>) -> volo_gen::miniredis::DeleteItemRespo
 }
 
 async fn multi() -> volo_gen::miniredis::MultiResponse {
+    if let Some(id) = *TRANSACTION_ID.lock().unwrap(){
+        let resp = volo_gen::miniredis::MultiResponse {
+            transaction_id : id
+        };
+        return resp;
+    }
     let req = volo_gen::miniredis::MultiRequest {
         
     };
@@ -87,11 +93,30 @@ async fn exec() -> volo_gen::miniredis::ExecResponse {
         transaction_id : TRANSACTION_ID.lock().unwrap().unwrap(),
     };
     let resp = CLIENT.exec(req).await;
+    *TRANSACTION_ID.lock().unwrap() = None;
     match resp {
         Ok(info) => {
             *TRANSACTION_ID.lock().unwrap() = None;
             info
         }
+        Err(e) => {
+            tracing::error!("{:?}", e);
+            Default::default()
+        }
+    }
+}
+
+async fn watch(key: FastStr) -> volo_gen::miniredis::WatchResponse {
+    if let None = *TRANSACTION_ID.lock().unwrap(){
+        return Default::default();
+    }
+    let req = volo_gen::miniredis::WatchRequest {
+        key,
+        transaction_id : TRANSACTION_ID.lock().unwrap().unwrap(),
+    };
+    let resp = CLIENT.watch(req).await;
+    match resp {
+        Ok(info) => info,
         Err(e) => {
             tracing::error!("{:?}", e);
             Default::default()
@@ -173,11 +198,19 @@ async fn main() {
 
         match cmd {
             "get" => {
+                if args.len() != 1 {
+                    println!("usage: get <key>");
+                    continue;
+                }
                 let key = args[0];
                 let resp = get_item(String::from(key).into()).await;
                 println!("{:?}", resp);
             }
             "set" => {
+                if args.len() != 2 {
+                    println!("usage: set <key> <value>");
+                    continue;
+                }
                 let key = args[0];
                 let value = args[1];
                 let resp = set_item(String::from(key).into(), String::from(value).into()).await;
@@ -194,6 +227,15 @@ async fn main() {
             }
             "exec" => {
                 let resp = exec().await;
+                println!("{:?}", resp);
+            }
+            "watch" => {
+                if args.len() != 1 {
+                    println!("usage: watch <key>");
+                    continue;
+                }
+                let key = args[0];
+                let resp = watch(String::from(key).into()).await;
                 println!("{:?}", resp);
             }
             "exit" => {

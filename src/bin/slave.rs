@@ -26,7 +26,7 @@ async fn main() {
     };
 
     volo_gen::miniredis::SlaveServiceServer::new(ss)
-        .layer_front(mini_redis::ContextLayer)
+        //.layer_front(mini_redis::ContextLayer)
         .run(slave_server)
         .await
         .unwrap();

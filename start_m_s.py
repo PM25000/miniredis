@@ -18,7 +18,7 @@ if 'linux' in sys.platform :
         
         # 启动slave任务
         for slave_port in slave_ports:
-            slave_command = f'cargo run --bin slave {slave_port} &'
+            slave_command = f'cargo run --bin slave {slave_port} {master_port} &'
             # subprocess.Popen(slave_command, shell=True)
             os.system(slave_command)
 else :
@@ -31,7 +31,7 @@ else :
         
         # 启动slave任务
         for slave_port in slave_ports:
-            slave_command = f'start cargo run --bin slave {slave_port}'
+            slave_command = f'start cargo run --bin slave {slave_port} {master_port}'
             # subprocess.Popen(slave_command, shell=True)
             os.system(slave_command)
 
