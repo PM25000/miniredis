@@ -63,7 +63,11 @@ async fn main() {
             key: String::from(args.next().unwrap()).into(),
             value: String::from(args.next().unwrap()).into(),
         };
-        let req = volo_gen::miniredis::SetItemRequest { kv: kk };
+        let req = volo_gen::miniredis::SetItemRequest {
+            kv: kk,
+            expire: None,
+            transaction_id: None,
+        };
         let _resp = volo_gen::miniredis::MasterService::set_item(&master, req).await;
         // println!("{:?}", resp);
     }

@@ -253,28 +253,36 @@ impl volo_gen::miniredis::MasterService for MasterServiceS {
             }
             tracing::info!("inner {:?}", inner);
             for (key, value) in inner.iter() {
-                {
-                    GLOBAL_HASH_MAP
-                        .lock()
-                        .unwrap()
-                        .insert(key.to_string(), value.to_string());
-                }
-                for s in &self.slave {
-                    let resp = s
-                        .sync_set_item(volo_gen::miniredis::SyncSetItemRequest {
-                            kv: volo_gen::miniredis::Kv {
-                                key: key.to_string().into(),
-                                value: value.to_string().into(),
-                            },
-                        })
-                        .await;
-                    match resp {
-                        Ok(_resp) => {
-                            continue;
-                        }
-                        Err(err) => return Err(err.into()),
-                    }
-                }
+                self.set_item(volo_gen::miniredis::SetItemRequest {
+                    kv: volo_gen::miniredis::Kv {
+                        key: key.to_string().into(),
+                        value: value.to_string().into(),
+                    },
+                    expire: None,
+                    transaction_id: None,
+                }).await?;
+                // {
+                //     GLOBAL_HASH_MAP
+                //         .lock()
+                //         .unwrap()
+                //         .insert(key.to_string(), value.to_string());
+                // }
+                // for s in &self.slave {
+                //     let resp = s
+                //         .sync_set_item(volo_gen::miniredis::SyncSetItemRequest {
+                //             kv: volo_gen::miniredis::Kv {
+                //                 key: key.to_string().into(),
+                //                 value: value.to_string().into(),
+                //             },
+                //         })
+                //         .await;
+                //     match resp {
+                //         Ok(_resp) => {
+                //             continue;
+                //         }
+                //         Err(err) => return Err(err.into()),
+                //     }
+                // }
             }
             // let _= local_set.get(&_request.transaction_id).clone();
         }

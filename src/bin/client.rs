@@ -2,7 +2,7 @@ use lazy_static::lazy_static;
 use pilota::FastStr;
 use std::{
     io::{self, Write},
-    net::SocketAddr,
+    net::SocketAddr, sync::Mutex,
 };
 
 lazy_static! {
