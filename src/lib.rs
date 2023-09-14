@@ -173,6 +173,10 @@ pub struct ProxyServiceS {
     )>,
 }
 
+lazy_static! {
+    static ref TRANSACTION_ID: Mutex<i64> = Mutex::new(0);
+}
+
 #[volo::async_trait]
 impl volo_gen::miniredis::ProxyService for ProxyServiceS {
     async fn set_item(
@@ -239,28 +243,85 @@ impl volo_gen::miniredis::ProxyService for ProxyServiceS {
         }
     }
 
+    async fn watch(
+        &self,
+        _request: volo_gen::miniredis::WatchRequest,
+    ) -> ::core::result::Result<volo_gen::miniredis::WatchResponse, ::volo_thrift::AnyhowError>
+    {
+        let count = self.master.len();
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        let key = &_request.key;
+        key.hash(&mut hasher);
+        let hash = hasher.finish() as usize;
+        let index = hash % count;
+        let client = &self.master[index];
+        let resp = client.0.watch(_request).await;
+        match resp {
+            Ok(info) => {
+                tracing::info!("watch: {:?} in {:?}", info, index);
+                Ok(info)
+            }
+            Err(e) => {
+                tracing::error!("{:?}", e);
+                Err(::volo_thrift::AnyhowError::from(e))
+            }
+        }
+    }
+
     async fn multi(
         &self,
         _request: volo_gen::miniredis::MultiRequest,
     ) -> ::core::result::Result<volo_gen::miniredis::MultiResponse, ::volo_thrift::AnyhowError>
     {
-        Ok(Default::default())
+        let new_id = {
+            let mut transaction_id = TRANSACTION_ID.lock().unwrap();
+            *transaction_id += 1;
+            *transaction_id
+        };
+        let mut index = 0;
+        for client in &self.master {
+            let resp = client.0.server_multi(volo_gen::miniredis::ServerMultiRequest {
+                transaction_id: new_id,
+            }).await;
+            match resp {
+                Ok(info) => {
+                    tracing::info!("multi: {:?} in {:?}", info, index);
+                }
+                Err(e) => {
+                    tracing::error!("{:?}", e);
+                }
+            };
+            index += 1;
+        }
+        Ok(volo_gen::miniredis::MultiResponse {
+            transaction_id: new_id,
+        })
+        
     }
 
     async fn exec(
         &self,
         _request: volo_gen::miniredis::ExecRequest,
     ) -> ::core::result::Result<volo_gen::miniredis::ExecResponse, ::volo_thrift::AnyhowError> {
-        Ok(Default::default())
+        let mut index = 0;
+        for client in &self.master {
+            let resp = client.0.exec(_request.clone()).await;
+            match resp {
+                Ok(info) => {
+                    tracing::info!("exec: {:?} in {:?}", info, index);
+                }
+                Err(e) => {
+                    tracing::error!("{:?}", e);
+                }
+            };
+            index += 1;
+        }
+        Ok(volo_gen::miniredis::ExecResponse {
+            message: String::from("OK").into(),
+        })
     }
 
-    async fn watch(
-        &self,
-        _request: volo_gen::miniredis::WatchRequest,
-    ) -> ::core::result::Result<volo_gen::miniredis::WatchResponse, ::volo_thrift::AnyhowError>
-    {
-        Ok(Default::default())
-    }
+
 }
 
 #[derive(Clone)]
