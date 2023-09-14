@@ -279,7 +279,9 @@ impl volo_gen::miniredis::MasterService for MasterServiceS {
                                                     .and_modify(|v| *v = None);
                             }
         }
-        Ok(Default::default())
+        Ok(volo_gen::miniredis::WatchResponse{
+            message: "Watch has been set".into(),
+        })
     }
 }
 
