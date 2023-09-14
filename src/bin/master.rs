@@ -3,9 +3,8 @@
 //cargo run --bin master <MasterPort> <SlavePort> [SlavePort...]
 
 use mini_redis::MasterServiceS;
-use std::default;
 use std::fs::File;
-use std::io::{BufRead, BufReader, Read};
+use std::io::{BufRead, BufReader};
 use std::net::SocketAddr;
 use volo::FastStr;
 use volo_gen::miniredis::{Kv, MasterService};
@@ -60,12 +59,9 @@ async fn main() {
 
         let mut args = line.split_whitespace();
 
-        let key: FastStr = FastStr::from(args.next().unwrap());
-        let value: FastStr = FastStr::from(args.next().unwrap());
-
         let kk = Kv {
-            key: key,
-            value: value,
+            key: String::from(args.next().unwrap()).into(),
+            value: String::from(args.next().unwrap()).into(),
         };
         let req = volo_gen::miniredis::SetItemRequest { kv: kk };
         let _resp = volo_gen::miniredis::MasterService::set_item(&master, req).await;
