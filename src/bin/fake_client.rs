@@ -38,24 +38,26 @@ async fn set_item(key: FastStr, value: FastStr) -> volo_gen::miniredis::SetItemR
 
 #[volo::main]
 async fn main() {
-    let file = File::open("redis.aof").unwrap();
-    // create a buffered reader
-    let mut reader = BufReader::new(file);
-    // iterate over the lines of the file
+    {
+        let file = File::open("redis.aof").unwrap();
+        // create a buffered reader
+        let mut reader = BufReader::new(file);
+        // iterate over the lines of the file
 
-    loop {
-        let mut input = reader.by_ref().lines().next().unwrap().unwrap();
+        loop {
+            let mut input = reader.by_ref().lines().next().unwrap().unwrap();
 
-        if input.is_empty() {
-            continue;
+            if input.is_empty() {
+                continue;
+            }
+
+            let mut args = input.split_whitespace();
+            let args = args.collect::<Vec<_>>();
+
+            let key = args[0];
+            let value = args[1];
+            let resp = set_item(String::from(key).into(), String::from(value).into()).await;
+            // println!("{:?}", resp);
         }
-
-        let mut args = input.split_whitespace();
-        let args = args.collect::<Vec<_>>();
-
-        let key = args[0];
-        let value = args[1];
-        let resp = set_item(String::from(key).into(), String::from(value).into()).await;
-        // println!("{:?}", resp);
     }
 }
