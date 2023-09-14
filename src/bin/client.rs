@@ -3,7 +3,7 @@ use pilota::FastStr;
 use volo_gen::miniredis;
 use std::{
     io::{self, BufRead, Write},
-    net::SocketAddr,
+    net::SocketAddr, sync::Mutex,
 };
 
 lazy_static! {
@@ -14,6 +14,7 @@ lazy_static! {
             .address(addr)
             .build()
     };
+    static ref TRANSACTION_ID: Mutex<Option<i64>> = Mutex::new(None);
 }
 
 async fn get_item(key: FastStr) -> volo_gen::miniredis::GetItemResponse {
@@ -36,6 +37,8 @@ async fn set_item(key: FastStr, value: FastStr) -> volo_gen::miniredis::SetItemR
             kv.value = value;
             kv
         },
+        expire : None,
+        transaction_id : *TRANSACTION_ID.lock().unwrap(),
     };
     let resp = CLIENT.set_item(req).await;
     match resp {
@@ -59,6 +62,43 @@ async fn delete_item(keys: Vec<FastStr>) -> volo_gen::miniredis::DeleteItemRespo
     }
 }
 
+async fn multi() -> volo_gen::miniredis::MultiResponse {
+    let req = volo_gen::miniredis::MultiRequest {
+        
+    };
+    let resp = CLIENT.multi(req).await;
+    match resp {
+        Ok(info) => {
+            *TRANSACTION_ID.lock().unwrap() = Some(info.transaction_id);
+            info
+        }
+        Err(e) => {
+            tracing::error!("{:?}", e);
+            Default::default()
+        }
+    }
+}
+
+async fn exec() -> volo_gen::miniredis::ExecResponse {
+    if let None = *TRANSACTION_ID.lock().unwrap(){
+        return Default::default();
+    }
+    let req = volo_gen::miniredis::ExecRequest {
+        transaction_id : TRANSACTION_ID.lock().unwrap().unwrap(),
+    };
+    let resp = CLIENT.exec(req).await;
+    match resp {
+        Ok(info) => {
+            *TRANSACTION_ID.lock().unwrap() = None;
+            info
+        }
+        Err(e) => {
+            tracing::error!("{:?}", e);
+            Default::default()
+        }
+    }
+}
+
 // async fn ping(msg: Option<String>) -> volo_gen::miniredis::PingResponse {
 //     let req = volo_gen::miniredis::PingRequest {
 //         message: msg.map(|s| FastStr::from(s)),
@@ -72,6 +112,7 @@ async fn delete_item(keys: Vec<FastStr>) -> volo_gen::miniredis::DeleteItemRespo
 //         }
 //     }
 // }
+
 
 #[volo::main]
 async fn main() {
@@ -109,6 +150,7 @@ async fn main() {
     // let resp = ping(None).await;
 
     // assert_eq!(resp.message.to_ascii_lowercase(), FastStr::from("pong"));
+    
 
     loop {
         print!("> ");
@@ -146,15 +188,14 @@ async fn main() {
                 let resp = delete_item(keys).await;
                 println!("{:?}", resp);
             }
-            // "ping" => {
-            //     let msg = args.join(" ");
-            //     let resp = if args.is_empty() {
-            //         ping(None).await
-            //     } else {
-            //         ping(Some(msg)).await
-            //     };
-            //     println!("{:?}", resp);
-            // }
+            "multi" => {
+                let resp = multi().await;
+                println!("{:?}", resp);
+            }
+            "exec" => {
+                let resp = exec().await;
+                println!("{:?}", resp);
+            }
             "exit" => {
                 break;
             }
