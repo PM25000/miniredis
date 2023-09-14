@@ -34,7 +34,7 @@ async fn main(){
         transaction_id:None,
     }).await;
     match resp{
-        Ok(msg) =>println!("{}",msg.message),
+        Ok(msg) =>println!("set {} from CLIENT_mas",msg.message),
         Err(err) => println!("{}",err),
     }
 
@@ -47,5 +47,34 @@ async fn main(){
     match resp{
         Ok(msg) =>println!("{}",msg.message),
         Err(err) => println!("{}",err),
+    }
+
+    let resp= CLIENT_mas.get_item(volo_gen::miniredis::GetItemRequest{
+        key: "k1".into()
+    }).await;
+    match resp {
+        Ok(resp) => {
+            if let Some(value)=resp.value{
+                println!("k1={} from master", value);
+            }else{
+                println!("k1=(nil) from master");
+            }
+        },
+        Err(err)=>println!("Get Failed: {}", err),
+    }
+    
+
+    let resp= CLIENT_sla.get_item(volo_gen::miniredis::GetItemRequest{
+        key: "k1".into()
+    }).await;
+    match resp {
+        Ok(resp) => {
+            if let Some(value)=resp.value{
+                println!("k1={} from slave", value);
+            }else{
+                println!("k1=(nil) from slave");
+            }
+        },
+        Err(err)=>println!("Get Failed: {}", err),
     }
 }

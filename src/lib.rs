@@ -518,12 +518,18 @@ where
         // let caller=&cx.rpc_info().caller().unwrap();
         // let caller=format!("{:?}",caller);
         // tracing::info!("\n\n{:?}\n\n",callee);
-        tracing::info!("\n\n{:?}\n\n", callee);
-        if !callee.contains("127.0.0.1:8080") {
-            Err(anyhow!("Not master call").into())
-        } else {
+        let req_msg=format!("{:?}",req);
+        if req_msg.to_lowercase().contains("set"){
+            tracing::info!("\n\n{:?}\n\n", callee);
+            if !callee.contains("127.0.0.1:8080") {
+                Err(anyhow!("Not master call").into())
+            } else {
+                self.0.call(cx, req).await
+            }
+        }else{
             self.0.call(cx, req).await
         }
+        
     }
 }
 
