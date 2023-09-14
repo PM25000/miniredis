@@ -1,5 +1,5 @@
 # miniredis
-##1.AOF(Append-only File)
+## 1.AOF(Append-only File)
 AOF is a persistence method that records every write operation received by the Redis server in an append-only file. This way, the Redis server can reconstruct its original dataset by replaying the commands in the AOF file when it restarts .
 
 So the main process of AOF contains two parts: first write the operation into aof file and then reconstruct the dataset by replaying the commands in the aof file.
@@ -75,8 +75,8 @@ ___
 
 
 
-##2.Master-Slave Structure
+## 2.Master-Slave Structure
 
 
 
-##3.Redis Cluster
+## 3.Redis Cluster
