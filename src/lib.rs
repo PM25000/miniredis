@@ -7,6 +7,7 @@ use std::hash::Hasher;
 use std::sync::{Arc, Mutex};
 use volo::FastStr;
 use volo_gen::miniredis;
+use anyhow::anyhow;
 
 lazy_static! {
     static ref GLOBAL_HASH_MAP: Mutex<HashMap<String, String>> = Mutex::new(HashMap::new());
@@ -14,6 +15,7 @@ lazy_static! {
 
 pub struct SlaveServiceS {
     pub addr: volo::net::Address,
+    pub master: volo::net::Address,
 }
 
 #[volo::async_trait]
@@ -41,7 +43,12 @@ impl volo_gen::miniredis::SlaveService for SlaveServiceS {
         &self,
         _request: volo_gen::miniredis::SyncSetItemRequest,
     ) -> ::core::result::Result<volo_gen::miniredis::SyncSetItemResponse, ::volo_thrift::AnyhowError>
-    {
+    {   
+        // if external_variable != self.master{
+        //     return Ok(volo_gen::miniredis::SyncSetItemResponse {
+        //         message: String::from("Not master call").into(),
+        //     });
+        // }
         {
             GLOBAL_HASH_MAP
                 .lock()
@@ -204,4 +211,45 @@ impl volo_gen::miniredis::ProxyService for ProxyServiceS {
             }
         }
     }
+}
+
+
+#[derive(Clone)]
+pub struct ContextService<S>(S);
+
+#[volo::service]
+impl<Req,S,Cx> volo::Service<Cx,Req> for ContextService<S>
+where
+	Req: std::fmt::Debug +Send+'static,
+	S: Send+'static+volo::Service<Cx,Req>+Sync,
+	S::Response: std::fmt::Debug,
+	S::Error: std::fmt::Debug,
+	Cx: Send+'static+volo::context::Context,
+	anyhow::Error: Into<S::Error>
+{
+	async fn call(&self,cx:&mut Cx,req:Req)->Result<S::Response,S::Error> {
+        // println!("\n\nin layer\n\n");
+        // tracing_subscriber::fmt::init();
+        let callee=&cx.rpc_info().callee().unwrap().service_name;
+        // let caller=&cx.rpc_info().caller().unwrap();
+        // let caller=format!("{:?}",caller);
+        // tracing::info!("\n\n{:?}\n\n",callee);
+        tracing::info!("\n\n{:?}\n\n",callee);
+        if !callee.contains("127.0.0.1:8080"){
+            Err(anyhow!("Not master call").into())
+        }else{
+            self.0.call(cx,req).await
+        }
+        
+	}
+}
+
+pub struct ContextLayer;
+
+impl<S> volo::Layer<S> for ContextLayer{
+	type Service = ContextService<S>;//
+
+	fn layer(self,inner: S)->Self::Service{
+		ContextService (inner)
+	}
 }
