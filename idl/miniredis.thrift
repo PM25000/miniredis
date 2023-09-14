@@ -15,6 +15,8 @@ struct GetItemResponse {
 
 struct SetItemRequest {
     1: required KV kv,
+    2: optional i64 expire,
+    3: optional i64 transactionId,
 }
 
 struct SetItemResponse {
@@ -45,16 +47,47 @@ struct SyncDeleteItemResponse {
     1: required i64 count,
 }
 
+struct WatchRequest {
+    1: required string key,
+    2: required i64 transactionId,
+}
+
+struct WatchResponse {
+    1: required string message,
+}
+
+struct MultiRequest {
+    
+}
+
+struct MultiResponse {
+    1: required i64 transactionId,
+}
+
+struct ExecRequest {
+    1: required i64 transactionId,
+}
+
+struct ExecResponse {
+    1: required string message,
+}
+
 service ProxyService {
     GetItemResponse GetItem(1: GetItemRequest request),
     SetItemResponse SetItem(1: SetItemRequest request),
     DeleteItemResponse DeleteItem(1: DeleteItemRequest request),
+    WatchResponse Watch(1: WatchRequest request),
+    MultiResponse Multi(1: MultiRequest request),
+    ExecResponse Exec(1: ExecRequest request),
 }
 
 service MasterService {
     GetItemResponse GetItem(1: GetItemRequest request),
     SetItemResponse SetItem(1: SetItemRequest request),
     DeleteItemResponse DeleteItem(1: DeleteItemRequest request),
+    WatchResponse Watch(1: WatchRequest request),
+    MultiResponse Multi(1: MultiRequest request),
+    ExecResponse Exec(1: ExecRequest request),
 }
 
 service SlaveService {

@@ -11,6 +11,8 @@ use anyhow::anyhow;
 
 lazy_static! {
     static ref GLOBAL_HASH_MAP: Mutex<HashMap<String, String>> = Mutex::new(HashMap::new());
+    static ref GLOBAL_COMMAND_MAP: Mutex<HashMap<i64, HashMap<String, String>>> = Mutex::new(HashMap::new());
+    static ref GLOBAL_WATCHED_VALUE: Mutex<HashMap<i64, HashMap<String, String>>> = Mutex::new(HashMap::new());
 }
 
 pub struct SlaveServiceS {

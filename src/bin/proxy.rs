@@ -6,6 +6,7 @@ use std::{net::SocketAddr, fs::File};
 use mini_redis::ProxyServiceS as S; 
 use serde::Serialize;
 use serde::Deserialize;
+use tokio::signal;
 use volo_gen::miniredis;
 
 // #[derive(Debug, Serialize, Deserialize)]
@@ -72,4 +73,7 @@ async fn main() {
         .run(addr)
         .await
         .unwrap();
+
+    tracing::info!("Bye!");
+
 }
