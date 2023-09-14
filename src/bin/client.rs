@@ -1,8 +1,7 @@
 use lazy_static::lazy_static;
 use pilota::FastStr;
-use volo_gen::miniredis;
 use std::{
-    io::{self, BufRead, Write},
+    io::{self, Write},
     net::SocketAddr,
 };
 

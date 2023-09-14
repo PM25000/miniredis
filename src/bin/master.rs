@@ -6,8 +6,7 @@ use mini_redis::MasterServiceS;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::net::SocketAddr;
-use volo::FastStr;
-use volo_gen::miniredis::{Kv, MasterService};
+use volo_gen::miniredis::Kv;
 
 #[volo::main]
 async fn main() {
@@ -42,9 +41,10 @@ async fn main() {
         });
     }
 
-    let master = MasterServiceS {
+    let mut master = MasterServiceS {
         slave: slaves,
         addr: addr_proxy.clone(),
+        rebuild: true,
     };
 
     let mut file = File::open("redis.aof").unwrap();
@@ -67,6 +67,8 @@ async fn main() {
         let _resp = volo_gen::miniredis::MasterService::set_item(&master, req).await;
         // println!("{:?}", resp);
     }
+
+    master.rebuild = false;
 
     volo_gen::miniredis::MasterServiceServer::new(master)
         .run(addr_proxy)
