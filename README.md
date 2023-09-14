@@ -94,10 +94,14 @@ for s in &self.slave {
 
 于是我并没有实现该文件对于命令行输入的支持,而是直接在其主函数中调用相关函数.
 
-启动方式为在`/miniredis`下,开启三个终端,按顺序执行.因为多是阻塞进程写脚本有点麻烦x.
-1. cargo run --bin master 8080 8081
-2. cargo run --bin slave 8081 8080
-3. cargo run --bin client4ms_tst 8080 8081
+启动方式为在`/miniredis`下,开启两个终端,分别执行以下两个任务.第一行启动`Master+Slave`,第二行为`client`,并且命令已经写进去了
+
+**注意 由于server端的特殊性,执行结束之后要手动杀死进程,否则可能后台占据端口**
+
+```bash
+python3 ./test4ms.py
+cargo run --bin client4ms_tst 8080 8081
+```
 
 里面实现了两个`client`,分别是`CLIENT_sla`与`CLIENT_mas`,第一个调用`从节点`的相关函数,第二个调用`主节点`.
 
@@ -119,4 +123,51 @@ k1=111 from slave
 
 ## Redis Cluster
 
+## Transaction
+
+### Master part
+
+主要实现三个函数`server_multi,watch,exec`.
+
+#### 数据存储
+该部分比较特殊的是使用到了两个全局变量
+
+```rust
+static ref GLOBAL_COMMAND_MAP: Mutex<HashMap<i64, HashMap<String, String>>> =
+        Mutex::new(HashMap::new());
+static ref GLOBAL_WATCHED_VALUE: Mutex<HashMap<i64, 
+                        HashMap<String, Option<String>>>> 
+                            =Mutex::new(HashMap::new());
+```
+
+1. GLOBAL_COMMAND_MAP: 主要用来记录在一个`transaction`的执行过程中那些量被修改了.外层HashMap的`key`是当前`事务ID`,用来区分各个事务的修改. 内层的HashMap则是被修改键值的`KV`
+
+2. GLOBAL_WATCHED_VALUE: 主要记录被`watch`的值,大致结构与上文相似,除了最内层为`Option<String>`,这是为了区分在watch时尚未被设置的量,用`None`表示.
+
+#### 执行
+
+* server_multi\
+    较为简单,就是初始化上述的两个全局变量.
+
+* watch\
+    也比较简单,取出当前键的值(若空设为`None`),并存到`GLOBAL_WATCHED_VALUE`中.
+
+* exec\
+    伪代码如下,主要逻辑为先检测`GLOBAL_WATCHED_VALUE`中的值与当前表中的值是否相同,若不同,返回错误.\
+    接着遍历整个`GLOBAL_COMMAND_MAP`,将事务中被修改的值写入真实的表中.
+
+```rust
+for (kv:KV) in GLOBAL_WATCHED_VALUE{
+    if changed
+        return ERROR;
+    else
+        continue;
+}
+for (kv:KV) in GLOBAL_COMMAND_MAP{
+    call self.set_it(kv)
+}
+
+```
+
+### Proxy part
 
